@@ -1,0 +1,24 @@
+{
+  "name": "builder-dao-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CLI + MCP server for Nouns Builder DAOs (generalized from Gnars)",
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:run": "pnpm -r test:run",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "clean": "pnpm -r exec rm -rf dist node_modules && rm -rf node_modules",
+    "changeset": "changeset",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.9",
+    "eslint": "^9.15.0",
+    "typescript": "^5.7.2"
+  }
+}
