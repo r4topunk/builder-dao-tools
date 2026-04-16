@@ -1,0 +1,35 @@
+{
+  "name": "@builder-dao/cli",
+  "version": "0.1.0",
+  "description": "CLI and MCP server for Nouns Builder DAOs on Base",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": { "builder-dao": "./dist/cli.js" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+    "./registry": { "import": "./dist/registry.js", "types": "./dist/registry.d.ts" },
+    "./context": { "import": "./dist/context.js", "types": "./dist/context.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/cli.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@toon-format/toon": "^2.0.1",
+    "viem": "^2.46.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.6"
+  },
+  "keywords": ["nouns-builder", "dao", "cli", "mcp", "base", "ethereum"],
+  "license": "MIT"
+}
