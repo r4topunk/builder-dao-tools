@@ -32,6 +32,11 @@ export function resolveConfig(
   const rpcUrl =
     extractFlag(argv, "--rpc-url") ?? env.BASE_RPC_URL ?? "https://mainnet.base.org";
   const chainId = env.CHAIN_ID ? parseInt(env.CHAIN_ID, 10) : 8453;
+  if (env.CHAIN_ID !== undefined && (Number.isNaN(chainId) || chainId <= 0)) {
+    throw new ConfigError(
+      `Invalid CHAIN_ID: ${env.CHAIN_ID}. Expected a positive integer.`
+    );
+  }
 
   if (!daoAddress) {
     throw new ConfigError(

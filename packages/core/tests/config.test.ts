@@ -80,4 +80,24 @@ describe("resolveConfig", () => {
     });
     expect(cfg.privateKey).toBe("0x" + "1".repeat(64));
   });
+
+  it("rejects invalid PRIVATE_KEY format", () => {
+    expect(() =>
+      resolveConfig([], {
+        DAO_ADDRESS: "0x880fb3cf5c6cc2d7dfc13a993e839a9411200c17",
+        GOLDSKY_PROJECT_ID: "p",
+        PRIVATE_KEY: "not-valid-hex",
+      })
+    ).toThrowError(ConfigError);
+  });
+
+  it("rejects invalid CHAIN_ID", () => {
+    expect(() =>
+      resolveConfig([], {
+        DAO_ADDRESS: "0x880fb3cf5c6cc2d7dfc13a993e839a9411200c17",
+        GOLDSKY_PROJECT_ID: "p",
+        CHAIN_ID: "not-a-number",
+      })
+    ).toThrowError(ConfigError);
+  });
 });
