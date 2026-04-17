@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck
+      - run: pnpm -r test:run
+      - run: pnpm -r build
+
+  no-gnars-defaults:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure no Gnars addresses in source
+        run: |
+          if grep -R -i --include='*.ts' --include='*.json' \
+              --exclude-dir=tests --exclude-dir=node_modules --exclude-dir=dist \
+              -E 'gnars|0x880fb3cf5c6cc2d7dfc13a993e839a9411200c17|0x3dd4e53a232b7b715c9ae455f4e732465ed71b4c' \
+              packages/ 2>/dev/null; then
+            echo "::error::Gnars-specific strings found in packages/ — examples/ and docs/ only"
+            exit 1
+          fi
