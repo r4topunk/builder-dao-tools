@@ -154,3 +154,17 @@ export const RECENT_PROPOSALS_QUERY = `
     }
   }
 `;
+
+export const DAO_BY_ID_QUERY = `
+  query GetDao($daoAddress: String!) {
+    dao(id: $daoAddress) {
+      id
+      name
+      symbol
+      governorAddress
+      treasuryAddress
+      auctionAddress
+      metadataAddress
+    }
+  }
+`;
