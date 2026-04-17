@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "builder-dao": {
+      "command": "builder-dao",
+      "args": ["mcp"],
+      "env": {
+        "DAO_ADDRESS": "0x...",
+        "GOLDSKY_PROJECT_ID": "..."
+      }
+    }
+  }
+}
