@@ -1,0 +1,43 @@
+{
+  "name": "@builder-dao/cli-search",
+  "version": "0.1.0",
+  "description": "Semantic search + local cache addon for @builder-dao/cli",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md", "LICENSE"],
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@builder-dao/cli": "^0.1.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "better-sqlite3": "^11.6.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@builder-dao/cli": "workspace:*",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "onnxruntime-node",
+      "sharp",
+      "protobufjs"
+    ]
+  },
+  "keywords": ["nouns-builder", "dao", "semantic-search", "embeddings", "mcp"],
+  "license": "MIT"
+}
