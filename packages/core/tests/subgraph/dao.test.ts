@@ -74,4 +74,26 @@ describe("fetchDaoMetadata", () => {
     await fetchDaoMetadata(baseCfg);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("throws when subgraph returns HTTP error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 500 }))
+    );
+    await expect(fetchDaoMetadata(baseCfg)).rejects.toThrow(/500/);
+  });
+
+  it("throws when subgraph returns GraphQL errors array", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            errors: [{ message: "Invalid query" }, { message: "Timeout" }],
+          })
+        )
+      )
+    );
+    await expect(fetchDaoMetadata(baseCfg)).rejects.toThrow(/Subgraph query error/);
+  });
 });
