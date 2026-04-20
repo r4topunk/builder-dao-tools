@@ -65,6 +65,16 @@ const CAST_VOTE_ABI = [
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
+  {
+    type: "function",
+    name: "hasVoted",
+    inputs: [
+      { name: "_proposalId", type: "bytes32", internalType: "bytes32" },
+      { name: "_voter", type: "address", internalType: "address" },
+    ],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
 ] as const;
 
 export const castVoteSchema = z.object({
@@ -129,7 +139,7 @@ export async function castVote(
   const support = SUPPORT_MAP[input.support];
   const trimmedReason = input.reason?.trim();
 
-  const [stateRaw, snapshot] = await Promise.all([
+  const [stateRaw, snapshot, alreadyVoted] = await Promise.all([
     publicClient.readContract({
       abi: CAST_VOTE_ABI,
       address: governor,
@@ -142,11 +152,22 @@ export async function castVote(
       functionName: "proposalSnapshot",
       args: [proposalId],
     }),
+    publicClient.readContract({
+      abi: CAST_VOTE_ABI,
+      address: governor,
+      functionName: "hasVoted",
+      args: [proposalId, account.address],
+    }),
   ]);
   const stateName = PROPOSAL_STATE_NAMES[Number(stateRaw)] ?? `Unknown(${stateRaw})`;
   if (Number(stateRaw) !== 1) {
     throw new Error(
       `Cannot vote - proposal is ${stateName}, not Active. Votes are only accepted while a proposal is in the Active state.`
+    );
+  }
+  if (alreadyVoted) {
+    throw new Error(
+      `Cannot vote - wallet ${account.address} already voted on this proposal. Each address can only vote once per proposal.`
     );
   }
 
