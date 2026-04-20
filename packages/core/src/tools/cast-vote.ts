@@ -98,6 +98,8 @@ export interface CastVoteOutput {
   governor: string;
 }
 
+const BYTES32_RE = /^0x[0-9a-fA-F]{64}$/;
+
 async function resolveProposalId(
   id: string | number,
   ctx: RunContext
@@ -107,6 +109,11 @@ async function resolveProposalId(
     const p = await ctx.subgraph.fetchProposalByNumber(n);
     if (!p) throw new Error(`Proposal #${id} not found`);
     return p.proposalId as Hex;
+  }
+  if (!BYTES32_RE.test(id)) {
+    throw new Error(
+      `Invalid proposal ID "${id}". Hex proposal IDs must be 0x-prefixed 32-byte hex (66 chars total). Pass the proposal number instead if you don't have the full hash.`
+    );
   }
   return id as Hex;
 }
