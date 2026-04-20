@@ -7,6 +7,18 @@ import { fetchDaoMetadata } from "../subgraph/dao.js";
 
 const SUPPORT_MAP = { AGAINST: 0n, FOR: 1n, ABSTAIN: 2n } as const;
 
+const PROPOSAL_STATE_NAMES = [
+  "Pending",
+  "Active",
+  "Canceled",
+  "Defeated",
+  "Succeeded",
+  "Queued",
+  "Expired",
+  "Executed",
+  "Vetoed",
+] as const;
+
 const CAST_VOTE_ABI = [
   {
     type: "function",
@@ -28,6 +40,30 @@ const CAST_VOTE_ABI = [
     ],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "state",
+    inputs: [{ name: "_proposalId", type: "bytes32", internalType: "bytes32" }],
+    outputs: [{ name: "", type: "uint8", internalType: "uint8" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "proposalSnapshot",
+    inputs: [{ name: "_proposalId", type: "bytes32", internalType: "bytes32" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getVotes",
+    inputs: [
+      { name: "_account", type: "address", internalType: "address" },
+      { name: "_timepoint", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
   },
 ] as const;
 
@@ -92,6 +128,40 @@ export async function castVote(
   const proposalId = await resolveProposalId(input.proposalId, ctx);
   const support = SUPPORT_MAP[input.support];
   const trimmedReason = input.reason?.trim();
+
+  const [stateRaw, snapshot] = await Promise.all([
+    publicClient.readContract({
+      abi: CAST_VOTE_ABI,
+      address: governor,
+      functionName: "state",
+      args: [proposalId],
+    }),
+    publicClient.readContract({
+      abi: CAST_VOTE_ABI,
+      address: governor,
+      functionName: "proposalSnapshot",
+      args: [proposalId],
+    }),
+  ]);
+  const stateName = PROPOSAL_STATE_NAMES[Number(stateRaw)] ?? `Unknown(${stateRaw})`;
+  if (Number(stateRaw) !== 1) {
+    throw new Error(
+      `Cannot vote - proposal is ${stateName}, not Active. Votes are only accepted while a proposal is in the Active state.`
+    );
+  }
+
+  const votingPower = await publicClient.readContract({
+    abi: CAST_VOTE_ABI,
+    address: governor,
+    functionName: "getVotes",
+    args: [account.address, snapshot],
+  });
+  if (votingPower === 0n) {
+    throw new Error(
+      `Cannot vote - wallet ${account.address} has 0 voting power at proposal snapshot (block ${snapshot}). ` +
+        `You need to own ${dao.symbol ?? "DAO"} tokens or have delegated voting power before the snapshot.`
+    );
+  }
 
   let txHash: Hex;
   if (trimmedReason && trimmedReason.length > 0) {
