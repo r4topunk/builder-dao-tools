@@ -15,8 +15,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/cli.ts",
-    "test": "vitest",
+    "test": "vitest run",
     "test:run": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -30,6 +31,15 @@
     "tsx": "^4.19.2",
     "vitest": "^2.1.6"
   },
+  "engines": { "node": ">=20.10" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/r4topunk/builder-dao-tools.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/r4topunk/builder-dao-tools/tree/main/packages/core#readme",
+  "bugs": { "url": "https://github.com/r4topunk/builder-dao-tools/issues" },
+  "author": "r4topunk",
   "keywords": ["nouns-builder", "dao", "cli", "mcp", "base", "ethereum"],
   "license": "MIT"
 }
