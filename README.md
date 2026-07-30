@@ -267,7 +267,7 @@ builder-dao-tools/
 │       │   ├── db/           # per-DAO SQLite (better-sqlite3)
 │       │   ├── embeddings/   # HuggingFace Transformers (all-MiniLM-L6-v2)
 │       │   └── tools/        # sync / index / search
-│       └── tests/            # 43 tests
+│       └── tests/            # 44 tests
 ├── docs/                     # architecture, plugin-api, migration guide
 ├── examples/                 # .env + MCP client configs
 └── .github/workflows/        # CI + release (changesets-driven)
@@ -288,7 +288,7 @@ pnpm install
 pnpm -r build            # build both packages (must precede typecheck)
 pnpm -r typecheck        # strict TS across the monorepo
 pnpm lint                # eslint (flat config at the repo root)
-pnpm -r test:run         # 124 tests total (81 core + 43 search)
+pnpm -r test:run         # 125 tests total (81 core + 44 search)
 ```
 
 That is the same order CI runs. `build` first is not cosmetic: the search package
