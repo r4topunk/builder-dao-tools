@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RunContext } from "../context.js";
+import type { SubgraphVote } from "../subgraph/types.js";
 
 export const getProposalVotesSchema = z.object({
   proposalId: z
@@ -34,7 +35,24 @@ export interface GetProposalVotesOutput {
     againstVoters: number;
     abstainVoters: number;
   };
+  /** Votes matching the request (after the support filter), across all pages */
+  total: number;
   hasMore: boolean;
+}
+
+// Subgraph page size for the fetch-all pass, with a cap so a misbehaving
+// endpoint cannot loop forever.
+const FETCH_PAGE_SIZE = 500;
+const MAX_FETCHED_VOTES = 5000;
+
+async function fetchAllVotes(ctx: RunContext, proposalNumber: number): Promise<SubgraphVote[]> {
+  const all: SubgraphVote[] = [];
+  while (all.length < MAX_FETCHED_VOTES) {
+    const page = await ctx.subgraph.fetchVotes(proposalNumber, FETCH_PAGE_SIZE, all.length);
+    all.push(...page);
+    if (page.length < FETCH_PAGE_SIZE) break;
+  }
+  return all;
 }
 
 
@@ -58,13 +76,9 @@ export async function getProposalVotes(
     proposalNumber = num;
   }
 
-  // Fetch votes from subgraph
-  // If filtering by support, we need to fetch more and filter client-side
-  // since the subgraph doesn't support support filtering directly
-  const fetchLimit = input.support ? 500 : input.limit;
-  const fetchOffset = input.support ? 0 : input.offset;
-
-  const votes = await ctx.subgraph.fetchVotes(proposalNumber, fetchLimit, fetchOffset);
+  // Fetch every vote: the subgraph cannot filter by support (done client-side) and
+  // the summary/total must describe the whole proposal, not the requested page.
+  const votes = await fetchAllVotes(ctx, proposalNumber);
 
   // Process votes
   let processedVotes = votes.map((v) => ({
@@ -92,14 +106,12 @@ export async function getProposalVotes(
   // Get total before pagination
   const total = processedVotes.length;
 
-  // Apply pagination for filtered results
-  if (input.support) {
-    processedVotes = processedVotes.slice(input.offset, input.offset + input.limit);
-  }
+  const page = processedVotes.slice(input.offset, input.offset + input.limit);
 
   return {
-    votes: processedVotes,
+    votes: page,
     summary,
-    hasMore: input.offset + processedVotes.length < total,
+    total,
+    hasMore: input.offset + page.length < total,
   };
 }

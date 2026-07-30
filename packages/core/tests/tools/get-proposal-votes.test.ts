@@ -1,7 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { getProposalVotes } from "../../src/tools/get-proposal-votes.js";
 import { makeContextWithSubgraph } from "../fixtures/context.js";
 import { mockProposal, mockVotes } from "../fixtures/proposals.js";
+import type { SubgraphVote } from "../../src/subgraph/types.js";
+
+const SUPPORTS = ["FOR", "AGAINST", "ABSTAIN"] as const;
+
+/** n votes, cycling FOR/AGAINST/ABSTAIN so the summary is predictable. */
+function makeVotes(n: number): SubgraphVote[] {
+  return Array.from({ length: n }, (_, i) => ({
+    ...mockVotes[0]!,
+    id: `0x1234-vote-${i}`,
+    voter: `0x${(i + 1).toString(16).padStart(40, "0")}`,
+    support: SUPPORTS[i % 3]!,
+    timestamp: String(1700100000 + i),
+  }));
+}
 
 describe("getProposalVotes", () => {
   it("should return votes for a proposal", async () => {
@@ -58,6 +72,53 @@ describe("getProposalVotes", () => {
 
     expect(page2?.votes).toHaveLength(1);
     expect(page2?.hasMore).toBe(false);
+  });
+
+  it("should compute summary, total and hasMore over the full set, not the page", async () => {
+    const votes = makeVotes(600);
+    const fetchVotes = vi.fn(async (n: number, first = 50, skip = 0) =>
+      n === 42 ? votes.slice(skip, skip + first) : []
+    );
+    const ctx = makeContextWithSubgraph({ fetchVotes });
+
+    const page1 = await getProposalVotes(
+      { proposalId: 42, limit: 50, offset: 0, format: "json" },
+      ctx
+    );
+
+    expect(page1?.votes).toHaveLength(50);
+    expect(page1?.total).toBe(600);
+    expect(page1?.hasMore).toBe(true);
+    expect(page1?.summary.totalVoters).toBe(600);
+    expect(page1?.summary.forVoters).toBe(200);
+    expect(page1?.summary.againstVoters).toBe(200);
+    expect(page1?.summary.abstainVoters).toBe(200);
+    // 500 + 100 → two subgraph round trips
+    expect(fetchVotes).toHaveBeenCalledTimes(2);
+    expect(fetchVotes.mock.calls[0]).toEqual([42, 500, 0]);
+    expect(fetchVotes.mock.calls[1]).toEqual([42, 500, 500]);
+
+    const lastPage = await getProposalVotes(
+      { proposalId: 42, limit: 50, offset: 550, format: "json" },
+      ctx
+    );
+    expect(lastPage?.votes).toHaveLength(50);
+    expect(lastPage?.hasMore).toBe(false);
+  });
+
+  it("should keep the summary over all votes when filtering by support", async () => {
+    const ctx = makeContextWithSubgraph({
+      fetchVotes: async (n) => (n === 42 ? mockVotes : []),
+    });
+
+    const result = await getProposalVotes(
+      { proposalId: 42, support: "FOR", limit: 50, offset: 0, format: "json" },
+      ctx
+    );
+
+    expect(result?.summary.totalVoters).toBe(4);
+    expect(result?.total).toBe(2);
+    expect(result?.hasMore).toBe(false);
   });
 
   it("should return vote details", async () => {
