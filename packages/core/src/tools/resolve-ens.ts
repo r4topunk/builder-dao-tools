@@ -58,8 +58,10 @@ async function fetchENSFromUpstream(address: string): Promise<{ name: string | n
         name?: string | null;
         avatar?: string | null;
       };
+      // `displayName` is a shortened address when the account has no ENS name,
+      // so it must never be used as the `name` — that would fabricate names.
       return {
-        name: data.displayName || data.name || null,
+        name: data.name || null,
         avatar: data.avatar || null,
       };
     }
