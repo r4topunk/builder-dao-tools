@@ -17,9 +17,13 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r typecheck
-      - run: pnpm -r test:run
+      # build must precede typecheck: @builder-dao/cli-search resolves
+      # @builder-dao/cli through core's gitignored dist/, so a fresh checkout
+      # cannot typecheck until core has been built.
       - run: pnpm -r build
+      - run: pnpm -r typecheck
+      - run: pnpm lint
+      - run: pnpm -r test:run
 
   no-gnars-defaults:
     runs-on: ubuntu-latest
