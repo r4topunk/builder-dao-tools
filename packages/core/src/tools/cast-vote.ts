@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { createWalletClient, createPublicClient, http, type Hex } from "viem";
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  createWalletClient,
+  createPublicClient,
+  http,
+  type Hex,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import type { RunContext } from "../context.js";
@@ -65,17 +72,35 @@ const CAST_VOTE_ABI = [
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
-  {
-    type: "function",
-    name: "hasVoted",
-    inputs: [
-      { name: "_proposalId", type: "bytes32", internalType: "bytes32" },
-      { name: "_voter", type: "address", internalType: "address" },
-    ],
-    outputs: [{ name: "", type: "bool", internalType: "bool" }],
-    stateMutability: "view",
-  },
+  // Governor custom errors, so viem can decode revert reasons from simulation
+  { type: "error", name: "ALREADY_VOTED", inputs: [] },
+  { type: "error", name: "VOTING_NOT_STARTED", inputs: [] },
+  { type: "error", name: "INVALID_VOTE", inputs: [] },
+  { type: "error", name: "PROPOSAL_DOES_NOT_EXIST", inputs: [] },
 ] as const;
+
+// The Governor has no public `hasVoted` getter (the mapping is internal), so the
+// only way to detect a duplicate vote up-front is to simulate the actual call.
+function extractRevertReason(err: unknown): string {
+  if (err instanceof BaseError) {
+    const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
+    if (revert instanceof ContractFunctionRevertedError) {
+      return revert.data?.errorName ?? revert.reason ?? revert.shortMessage;
+    }
+    return err.shortMessage;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+function mapCastVoteRevert(err: unknown, voter: string): Error {
+  const reason = extractRevertReason(err);
+  if (reason.includes("ALREADY_VOTED")) {
+    return new Error(
+      `Cannot vote - wallet ${voter} already voted on this proposal. Each address can only vote once per proposal.`
+    );
+  }
+  return new Error(`Cannot vote - simulation reverted: ${reason}`);
+}
 
 export const castVoteSchema = z.object({
   proposalId: z
@@ -146,7 +171,7 @@ export async function castVote(
   const support = SUPPORT_MAP[input.support];
   const trimmedReason = input.reason?.trim();
 
-  const [stateRaw, snapshot, alreadyVoted] = await Promise.all([
+  const [stateRaw, snapshot] = await Promise.all([
     publicClient.readContract({
       abi: CAST_VOTE_ABI,
       address: governor,
@@ -159,22 +184,11 @@ export async function castVote(
       functionName: "proposalSnapshot",
       args: [proposalId],
     }),
-    publicClient.readContract({
-      abi: CAST_VOTE_ABI,
-      address: governor,
-      functionName: "hasVoted",
-      args: [proposalId, account.address],
-    }),
   ]);
   const stateName = PROPOSAL_STATE_NAMES[Number(stateRaw)] ?? `Unknown(${stateRaw})`;
   if (Number(stateRaw) !== 1) {
     throw new Error(
       `Cannot vote - proposal is ${stateName}, not Active. Votes are only accepted while a proposal is in the Active state.`
-    );
-  }
-  if (alreadyVoted) {
-    throw new Error(
-      `Cannot vote - wallet ${account.address} already voted on this proposal. Each address can only vote once per proposal.`
     );
   }
 
@@ -193,6 +207,17 @@ export async function castVote(
 
   let txHash: Hex;
   if (trimmedReason && trimmedReason.length > 0) {
+    try {
+      await publicClient.simulateContract({
+        account,
+        abi: CAST_VOTE_ABI,
+        address: governor,
+        functionName: "castVoteWithReason",
+        args: [proposalId, support, trimmedReason],
+      });
+    } catch (err) {
+      throw mapCastVoteRevert(err, account.address);
+    }
     txHash = await walletClient.writeContract({
       account,
       abi: CAST_VOTE_ABI,
@@ -202,6 +227,17 @@ export async function castVote(
       chain: base,
     });
   } else {
+    try {
+      await publicClient.simulateContract({
+        account,
+        abi: CAST_VOTE_ABI,
+        address: governor,
+        functionName: "castVote",
+        args: [proposalId, support],
+      });
+    } catch (err) {
+      throw mapCastVoteRevert(err, account.address);
+    }
     txHash = await walletClient.writeContract({
       account,
       abi: CAST_VOTE_ABI,

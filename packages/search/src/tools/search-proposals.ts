@@ -49,7 +49,7 @@ export interface SearchProposalsOutput {
 export async function searchProposals(
   repo: ProposalRepository,
   input: SearchProposalsInput,
-  ctx: RunContext
+  _ctx: RunContext
 ): Promise<SearchProposalsOutput> {
   // Get all embeddings from database
   const allEmbeddings = repo.getAllEmbeddings();

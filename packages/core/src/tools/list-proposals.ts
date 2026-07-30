@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RunContext } from "../context.js";
+import type { SubgraphProposal } from "../subgraph/types.js";
 import { calculateProposalStatus } from "../subgraph/types.js";
 
 export const listProposalsSchema = z.object({
@@ -46,13 +47,26 @@ export interface ListProposalsOutput {
   hasMore: boolean;
 }
 
-export async function listProposals(input: ListProposalsInput, ctx: RunContext): Promise<ListProposalsOutput> {
-  // Fetch from subgraph directly
-  // Note: Subgraph doesn't support status filtering, so we fetch more and filter client-side
-  const fetchLimit = input.status ? 200 : input.limit;
-  const fetchOffset = input.status ? 0 : input.offset;
+// Subgraph page size for the fetch-all pass. The cap matches graph-node's `skip`
+// ceiling and keeps a misbehaving endpoint from looping forever.
+const FETCH_PAGE_SIZE = 200;
+const MAX_FETCHED_PROPOSALS = 5000;
 
-  const proposals = await ctx.subgraph.fetchProposals(fetchLimit, fetchOffset);
+async function fetchAllProposals(ctx: RunContext): Promise<SubgraphProposal[]> {
+  const all: SubgraphProposal[] = [];
+  while (all.length < MAX_FETCHED_PROPOSALS) {
+    const page = await ctx.subgraph.fetchProposals(FETCH_PAGE_SIZE, all.length);
+    all.push(...page);
+    if (page.length < FETCH_PAGE_SIZE) break;
+  }
+  return all;
+}
+
+export async function listProposals(input: ListProposalsInput, ctx: RunContext): Promise<ListProposalsOutput> {
+  // The subgraph can neither filter by status (it is derived client-side) nor be
+  // trusted for a total count, so fetch the full set and paginate in memory —
+  // that keeps `total`, `hasMore` and the ordering globally correct across pages.
+  const proposals = await fetchAllProposals(ctx);
 
   // Calculate status for each proposal and optionally filter
   let processedProposals = proposals.map((p) => ({
@@ -74,22 +88,21 @@ export async function listProposals(input: ListProposalsInput, ctx: RunContext):
     processedProposals = processedProposals.filter((p) => p.status === input.status);
   }
 
-  // Apply order (subgraph returns desc by default)
-  if (input.order === "asc") {
-    processedProposals.reverse();
-  }
+  // Order the full set (proposalNumber breaks ties on identical timestamps)
+  const direction = input.order === "asc" ? 1 : -1;
+  processedProposals.sort(
+    (a, b) =>
+      direction * (a.timeCreated - b.timeCreated || a.proposalNumber - b.proposalNumber)
+  );
 
-  // Get total before pagination
+  // Total over the full (optionally filtered) set, before pagination
   const total = processedProposals.length;
 
-  // Apply pagination for status-filtered results
-  if (input.status) {
-    processedProposals = processedProposals.slice(input.offset, input.offset + input.limit);
-  }
+  const page = processedProposals.slice(input.offset, input.offset + input.limit);
 
   return {
-    proposals: processedProposals,
+    proposals: page,
     total,
-    hasMore: input.offset + processedProposals.length < total,
+    hasMore: input.offset + page.length < total,
   };
 }

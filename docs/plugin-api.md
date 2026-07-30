@@ -4,7 +4,46 @@ Write your own addon for `@builder-dao/cli`.
 
 ## Overview
 
-The `@builder-dao/cli` core exposes a plugin registry that allows published npm packages (addon packages) to register their own CLI commands and MCP tools without modifying the core package. This guide shows you how to create an addon.
+The `@builder-dao/cli` core exposes a plugin registry that allows packages to register their own CLI commands and MCP tools without modifying the core package. This guide shows you how to create an addon.
+
+## Discovery
+
+> **Read this first — the registry works, generic discovery does not yet.**
+
+`packages/core/src/cli.ts` registers the core commands and then attempts exactly
+one hardcoded import:
+
+```typescript
+try {
+  await import("@builder-dao/cli-search");   // the only name core looks for
+} catch {
+  // Addon not installed; core commands remain available
+}
+```
+
+There is **no** scan for `@builder-dao/cli-*` packages, no plugin manifest and no
+config key. Consequences:
+
+| | Status |
+|---|---|
+| Registry API (`registerCommand` / `registerTool`) | **Works today** — stable, used by `@builder-dao/cli-search` |
+| First-party `@builder-dao/cli-search` auto-load | **Works today** — hardcoded by name |
+| Any other package auto-loading into the published binary | **Not supported yet** — roadmap |
+
+So the rest of this guide describes the **API your addon should target**, not a
+loading mechanism you can rely on from an arbitrary npm package. Until generic
+discovery ships, the two ways to actually run an addon are:
+
+- **Fork core** and add your package to the import list in `cli.ts`.
+- **Land it as a first-party package** in this monorepo.
+
+Note that a third-party *wrapper binary* is not currently an option either: core
+does not expose its CLI entry point in `exports`, so
+`import "@builder-dao/cli/dist/cli.js"` fails with
+`ERR_PACKAGE_PATH_NOT_EXPORTED`. Exposing that entry (or a `runCli()` export) is
+a prerequisite for the wrapper pattern.
+
+Track the roadmap item "Generic third-party addon discovery" in the root README.
 
 ## Package Setup
 
@@ -24,13 +63,15 @@ Create a new npm package with the following structure:
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
+  "engines": { "node": ">=20.10" },
   "peerDependencies": {
-    "@builder-dao/cli": "^0.1.0"
+    "@builder-dao/cli": ">=0.1.0 <1"
   },
   "devDependencies": {
-    "@builder-dao/cli": "^0.1.0",
+    "@builder-dao/cli": ">=0.1.0 <1",
     "typescript": "^5.5.0",
     "zod": "^3.23.0"
   },
@@ -41,14 +82,15 @@ Create a new npm package with the following structure:
 ```
 
 Key notes:
-- **No `bin`** — the addon does not provide a binary; the core binary discovers and loads it.
+- **No `bin`** — the addon does not provide a binary; it is loaded into the core binary (see [Discovery](#discovery) for what "loaded" means today).
 - **`exports`** — point to your compiled entry file.
-- **`peerDependencies`** — require `@builder-dao/cli` as a peer; users must install both.
+- **`peerDependencies`** — require `@builder-dao/cli` as a peer; users must install both. Use a range like `>=0.1.0 <1` rather than `^0.1.0`: on a `0.x` package a caret range only accepts patch bumps, so a core minor release would put you out of range for no good reason.
+- **`test` scripts** — `vitest` with no subcommand is watch mode and will hang in CI; make `test` the one-shot run and put watch behind `test:watch`.
 - **Avoid heavy dependencies** — the core package should remain lightweight; add only what your addon needs.
 
 ## Entry File: Side-Effect Registration
 
-The entry point (`src/index.ts`) uses side-effects (module-level code) to register commands and tools into the core registry. This file is imported automatically by the core at startup.
+The entry point (`src/index.ts`) uses side-effects (module-level code) to register commands and tools into the core registry — it runs when core imports the package at startup (see [Discovery](#discovery)).
 
 ```typescript
 // src/index.ts
@@ -285,17 +327,11 @@ pnpm add @builder-dao/cli @builder-dao/cli-myfeature
 
 **Discovery:**
 
-The core package auto-detects and loads your addon at runtime:
-
-```typescript
-try {
-  await import("@builder-dao/cli-search");
-} catch {
-  // Not installed; continue
-}
-```
-
-No configuration or plugin manifest needed. If your package is installed and reachable, the dynamic import succeeds and your side-effects run.
+See [Discovery](#discovery) above. Publishing under the `@builder-dao/cli-<name>`
+convention does **not** make the core binary pick your package up — core imports
+`@builder-dao/cli-search` by name and nothing else. Publishing is still worth
+doing (it is what generic discovery will consume, and forks/wrappers can install
+it), but document the wrapper or fork step your users need.
 
 ## Best Practices
 
@@ -339,21 +375,29 @@ registerCommand({
   "type": "module",
   "main": "dist/index.js",
   "exports": { ".": "./dist/index.js" },
-  "peerDependencies": { "@builder-dao/cli": "^0.1.0" },
-  "devDependencies": { "@builder-dao/cli": "^0.1.0", "typescript": "^5.5.0" }
+  "engines": { "node": ">=20.10" },
+  "peerDependencies": { "@builder-dao/cli": ">=0.1.0 <1" },
+  "devDependencies": { "@builder-dao/cli": ">=0.1.0 <1", "typescript": "^5.5.0" }
 }
 ```
 
-**Usage:**
+**Usage — once generic discovery ships.** See [Discovery](#discovery): installing
+the two packages is *not* sufficient today, because core never imports
+`@builder-dao/cli-stats`.
+
 ```bash
 pnpm add -g @builder-dao/cli @builder-dao/cli-stats
 builder-dao stats --pretty
 # { "totalProposals": 42, "active": 2, "executed": 40, "dao": "0x..." }
 ```
 
+To run this addon today, fork core and add the import to `cli.ts`, or land the
+package in this monorepo.
+
 ## Troubleshooting
 
 **Command not found:**
+- First check [Discovery](#discovery): unless your package is `@builder-dao/cli-search`, the published core binary never imports it, so its registrations never run. You need a fork or wrapper entry point.
 - Ensure your addon package is installed (`npm list @builder-dao/cli-yourpkg`).
 - Check that `@builder-dao/cli` is also installed and accessible.
 - Verify the command name matches the `name` field in `registerCommand()`.

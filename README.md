@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![pnpm](https://img.shields.io/badge/pnpm-9-F69220)](pnpm-workspace.yaml)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933)](.nvmrc)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520.10-339933)](.nvmrc)
 [![Base](https://img.shields.io/badge/chain-Base-0052FF)](https://base.org)
 
 Works with any Nouns Builder DAO — point it at a token contract and a Goldsky project ID, get proposals, votes, ENS resolution, and on-chain vote casting. The same tools also expose as an MCP server so Claude/Cursor/Copilot/etc. can operate on your DAO's governance data via native tool calls.
@@ -90,10 +90,14 @@ $ builder-dao proposals --limit 3 --pretty
     },
     …
   ],
-  "total": 3,
+  "total": 119,
   "hasMore": true
 }
 ```
+
+`total` is the size of the whole matching set (after any `--status` filter), not
+the size of the page — so `total` with `--limit 3` tells you how many proposals
+there are, and `hasMore` is `offset + returned < total`.
 
 **2. Drill into a specific proposal**
 
@@ -157,9 +161,9 @@ $ builder-dao mcp --sse          # http://localhost:3100/mcp  (health at /health
     └──────────────────────┘                  └────────────────────┘
 ```
 
-- **Same code, two surfaces.** The 8 tools (list_proposals, get_proposal, get_proposal_votes, resolve_ens, resolve_ens_batch, cast_vote, sync_proposals, search_proposals, index_embeddings) register once, expose via both the CLI command layer and the MCP tool layer.
+- **Same code, two surfaces.** The 9 tools — 6 core (`list_proposals`, `get_proposal`, `get_proposal_votes`, `resolve_ens`, `resolve_ens_batch`, `cast_vote`) plus 3 from the optional search addon (`sync_proposals`, `search_proposals`, `index_embeddings`) — register once and expose via both the CLI command layer and the MCP tool layer.
 - **Stateless by default.** Read-path commands hit the subgraph directly — no database needed.
-- **Optional local cache.** Install `@builder-dao/cli-search` and your data is synced to `$XDG_DATA_HOME/builder-dao/<dao-addr>.db` for offline + semantic search over proposal text via a local HuggingFace embedding model.
+- **Optional local cache.** Install `@builder-dao/cli-search` and your data is synced to `$XDG_DATA_HOME/builder-dao/<dao-addr-short>.db` — or `~/.local/share/builder-dao/<dao-addr-short>.db` when `XDG_DATA_HOME` is unset — for offline + semantic search over proposal text via a local HuggingFace embedding model.
 - **Per-DAO isolation.** Switch DAOs with `--dao 0x…` and the SQLite path switches automatically. No shared state between DAOs.
 
 More detail in [`docs/architecture.md`](docs/architecture.md).
@@ -182,13 +186,15 @@ See [`packages/core/README.md`](packages/core/README.md) for the full reference.
 | `builder-dao index` | search addon | Generate embeddings |
 | `builder-dao search "<query>"` | search addon | Semantic search |
 
-**Global flags:** `--dao <addr>`, `--subgraph-project <id>`, `--rpc-url <url>`, `--pretty`, `--toon` (40% fewer tokens for LLM context), `--help`, `--version`.
+**Global flags:** `--dao <addr>`, `--subgraph-project <id>`, `--rpc-url <url>`, `--pretty`, `--toon` (40% fewer tokens for LLM context), `--sse` (with `mcp` only), `--help`, `--version`.
+
+This table mirrors `builder-dao --help`. Addon commands (`sync`, `index`, `search`) only appear in the help output when `@builder-dao/cli-search` is installed and resolvable.
 
 ---
 
 ## MCP server
 
-`builder-dao mcp` serves all tools over MCP stdio. Example Claude Desktop config:
+`builder-dao mcp` serves all tools over MCP stdio. Example Claude Desktop config — macOS `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
 {
@@ -213,9 +219,11 @@ More client snippets in [`examples/`](examples/).
 
 ## Plugin system
 
-Any npm package can add commands and MCP tools to the `builder-dao` binary by importing the core registry and calling `registerCommand` / `registerTool`. At startup, the core CLI dynamically imports `@builder-dao/cli-<addon-name>` packages, and their registrations become first-class commands.
+A package adds commands and MCP tools to the `builder-dao` binary by importing the core registry and calling `registerCommand` / `registerTool`. Registrations become first-class commands, indistinguishable from core ones.
 
-Minimum addon:
+> **Scope today:** the core CLI loads exactly one addon — the first-party `@builder-dao/cli-search` — via a single hardcoded dynamic import at startup (`packages/core/src/cli.ts`). There is **no** generic `@builder-dao/cli-<name>` discovery yet; a third-party addon cannot load itself into the binary. Generic discovery is on the [roadmap](#roadmap). Until then, the registry is usable by forks and by first-party addons.
+
+Minimum addon (the shape a first-party addon uses today, and what generic discovery will consume):
 
 ```ts
 // my-addon/src/index.ts
@@ -252,14 +260,14 @@ builder-dao-tools/
 │   │   │   ├── subgraph/     # Goldsky client, queries, DAO metadata lookup
 │   │   │   ├── tools/        # list / get / votes / vote / ens
 │   │   │   └── utils/
-│   │   └── tests/            # 58 tests
+│   │   └── tests/            # 81 tests
 │   └── search/               # @builder-dao/cli-search  (optional addon)
 │       ├── src/
 │       │   ├── index.ts      # side-effect registration
 │       │   ├── db/           # per-DAO SQLite (better-sqlite3)
 │       │   ├── embeddings/   # HuggingFace Transformers (all-MiniLM-L6-v2)
 │       │   └── tools/        # sync / index / search
-│       └── tests/            # 37 tests
+│       └── tests/            # 44 tests
 ├── docs/                     # architecture, plugin-api, migration guide
 ├── examples/                 # .env + MCP client configs
 └── .github/workflows/        # CI + release (changesets-driven)
@@ -271,16 +279,24 @@ Zero Gnars-specific defaults anywhere in `packages/` — CI enforces this.
 
 ## Development
 
-Prereqs: Node ≥ 20, pnpm 9.
+Prereqs: Node ≥ 20.10 (the build emits import attributes, which older Node cannot parse), pnpm 9.
 
 ```bash
 git clone https://github.com/r4topunk/builder-dao-tools.git
 cd builder-dao-tools
 pnpm install
-pnpm -r build            # build both packages
-pnpm -r test:run         # 95 tests total (58 core + 37 search)
+pnpm -r build            # build both packages (must precede typecheck)
 pnpm -r typecheck        # strict TS across the monorepo
+pnpm lint                # eslint (flat config at the repo root)
+pnpm -r test:run         # 125 tests total (81 core + 44 search)
 ```
+
+That is the same order CI runs. `build` first is not cosmetic: the search package
+resolves `@builder-dao/cli` through core's gitignored `dist/`, so `typecheck`
+fails on a fresh clone until core has been built.
+
+`pnpm -r test` is a one-shot run too (it maps to `vitest run`). Watch mode is
+opt-in via `pnpm -r test:watch`.
 
 Run the CLI against your DAO without installing globally:
 
@@ -306,7 +322,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the release flow (@changesets) and 
 - [x] Per-DAO SQLite isolation for semantic search
 - [x] Dynamic governor resolution via subgraph
 - [x] TOON output for token-efficient LLM context
-- [x] GitHub Actions CI (lint, typecheck, test, build, no-Gnars-defaults guard)
+- [x] GitHub Actions CI (build, typecheck, lint, test, no-Gnars-defaults guard)
+- [ ] Generic third-party addon discovery (today only `@builder-dao/cli-search` is loaded, hardcoded)
 - [ ] Publish to npm under `@builder-dao/*`
 - [ ] Transfer repo to the Builder DAO GitHub org
 - [ ] Additional addons (treasury analysis, governance alerts)

@@ -11,7 +11,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true
+    // No maps: `files` excludes `src/`, so any emitted *.map in the published
+    // tarball would point at sources that aren't there.
+    "declarationMap": false,
+    "sourceMap": false
   }
 }

@@ -116,6 +116,36 @@ describe("SubgraphClient", () => {
     });
   });
 
+  describe("fetchRecentProposals", () => {
+    it("should forward since/first/skip so callers can page", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockProposalsResponse,
+      });
+
+      await client.fetchRecentProposals(1700000000, 50, 100);
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.variables.since).toBe("1700000000");
+      expect(callBody.variables.first).toBe(50);
+      expect(callBody.variables.skip).toBe(100);
+      expect(callBody.query).toMatch(/orderDirection: asc/);
+    });
+
+    it("should default to a pageable batch size", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockProposalsResponse,
+      });
+
+      await client.fetchRecentProposals(0);
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.variables.first).toBe(50);
+      expect(callBody.variables.skip).toBe(0);
+    });
+  });
+
   describe("fetchVotes", () => {
     it("should fetch votes for a proposal", async () => {
       mockFetch.mockResolvedValueOnce({

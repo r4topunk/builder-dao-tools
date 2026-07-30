@@ -54,7 +54,7 @@ A modular, pluggable CLI and MCP server for Nouns Builder DAOs on Base.
 | Package | Exports | Purpose | Dependencies |
 |---------|---------|---------|--------------|
 | `@builder-dao/cli` (core) | CLI binary `builder-dao`, MCP server, registry API (`registerCommand`, `registerTool`, `getCommands`, `getTools`), types (`RunContext`, `DaoConfig`) | Read-only governance queries: proposals, votes, ENS; MCP server launcher | @modelcontextprotocol/sdk, zod, viem |
-| `@builder-dao/cli-search` (addon) | Commands: `sync`, `index`, `search`; MCP tools: `sync_proposals`, `index_embeddings`, `search_proposals` | Optional semantic search and caching. Zero dependencies imported into core. | @xenova/transformers, better-sqlite3, peerDep: @builder-dao/cli |
+| `@builder-dao/cli-search` (addon) | Commands: `sync`, `index`, `search`; MCP tools: `sync_proposals`, `index_embeddings`, `search_proposals` | Optional semantic search and caching. Zero dependencies imported into core. | @huggingface/transformers, better-sqlite3, peerDep: @builder-dao/cli |
 
 ## Configuration Resolution
 
@@ -105,7 +105,8 @@ registerTool({
 
 **Discovery (core side):**
 
-Both the CLI and MCP server execute the same dynamic import at startup:
+`cli.ts` is the single entry point for registration. It registers the core
+commands, then attempts one hardcoded dynamic import for the first-party addon:
 
 ```typescript
 try {
@@ -116,6 +117,16 @@ try {
 ```
 
 If the addon is installed (peerDep resolution succeeds), its side-effect registration runs and its commands/tools appear in the registry. If not installed, the core gracefully continues with only core commands.
+
+Two constraints worth stating plainly:
+
+- **The addon name is hardcoded.** There is no scan for `@builder-dao/cli-*`
+  packages, no plugin manifest and no config key. A third-party addon cannot get
+  itself loaded into the published binary today; generic discovery is roadmap.
+- **`server.ts` does not register anything.** Registration happens exactly once,
+  in `cli.ts`, before dispatch. The MCP server reads the already-populated
+  registry — it used to repeat the registration, which tripped the registry's
+  duplicate guard and made `builder-dao mcp` fail on startup.
 
 **Unknown command UX:**
 
@@ -230,9 +241,19 @@ $XDG_DATA_HOME/builder-dao/{daoAddressShort}.db
 
 Where `daoAddressShort` is the first 10 characters of the address, e.g., `0x880fb3cf.db` for Gnars.
 
+Resolution order in `packages/search/src/db/connection.ts`:
+
+1. `DB_PATH` — used verbatim, wins over everything.
+2. `$XDG_DATA_HOME/builder-dao/{daoAddressShort}.db` when `XDG_DATA_HOME` is set.
+3. `~/.local/share/builder-dao/{daoAddressShort}.db` otherwise.
+
+The same XDG-style layout applies on every platform — there is no
+platform-specific branch in the resolver:
+
 On macOS: `~/.local/share/builder-dao/0x880fb3cf.db`  
 On Linux: `~/.local/share/builder-dao/0x880fb3cf.db`  
-On Windows: `%LOCALAPPDATA%\builder-dao\0x880fb3cf.db`
+On Windows: `%USERPROFILE%\.local\share\builder-dao\0x880fb3cf.db` (Node's
+`os.homedir()`; **not** `%LOCALAPPDATA%`)
 
 **Transparent switching:** When a user runs `--dao <new-address>`, the addon automatically opens the database for that DAO. No migration needed; each DAO has its own isolated database.
 
