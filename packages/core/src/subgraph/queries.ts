@@ -123,12 +123,13 @@ export const VOTES_QUERY = `
 `;
 
 export const RECENT_PROPOSALS_QUERY = `
-  query GetRecentProposals($daoAddress: String!, $since: BigInt!) {
+  query GetRecentProposals($daoAddress: String!, $since: BigInt!, $first: Int!, $skip: Int!) {
     proposals(
       where: { dao: $daoAddress, timeCreated_gt: $since }
       orderBy: timeCreated
-      orderDirection: desc
-      first: 100
+      orderDirection: asc
+      first: $first
+      skip: $skip
     ) {
       id
       proposalId

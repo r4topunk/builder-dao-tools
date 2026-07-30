@@ -30,7 +30,12 @@ export interface SubgraphClient {
   fetchProposalByNumber(n: number): Promise<SubgraphProposal | null>;
   fetchProposalById(id: string): Promise<SubgraphProposal | null>;
   fetchVotes(n: number, first?: number, skip?: number): Promise<SubgraphVote[]>;
-  fetchRecentProposals(sinceTimestamp: number): Promise<SubgraphProposal[]>;
+  /** Proposals created after `sinceTimestamp`, oldest first, so callers can page. */
+  fetchRecentProposals(
+    sinceTimestamp: number,
+    first?: number,
+    skip?: number
+  ): Promise<SubgraphProposal[]>;
 }
 
 export function createSubgraphClient(cfg: DaoConfig): SubgraphClient {
@@ -88,10 +93,12 @@ export function createSubgraphClient(cfg: DaoConfig): SubgraphClient {
       });
       return r.data.proposalVotes;
     },
-    async fetchRecentProposals(sinceTimestamp) {
+    async fetchRecentProposals(sinceTimestamp, first = 50, skip = 0) {
       const r = await execute<ProposalsQueryResponse>(RECENT_PROPOSALS_QUERY, {
         daoAddress,
         since: sinceTimestamp.toString(),
+        first,
+        skip,
       });
       return r.data.proposals;
     },

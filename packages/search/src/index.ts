@@ -20,6 +20,10 @@ registerCommand({
     const repo = new ProposalRepository(db);
     const result = await syncProposals(repo, { full: values.full ?? false }, ctx);
     ctx.print(result);
+    if (!result.success) {
+      // Non-zero exit so a failed sync is never mistaken for a successful one
+      throw new Error(`Sync incomplete: ${result.errors.join("; ")}`);
+    }
   },
 });
 
