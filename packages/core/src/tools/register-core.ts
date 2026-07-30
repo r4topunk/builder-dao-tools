@@ -1,5 +1,4 @@
 import { parseArgs } from "node:util";
-import { z } from "zod";
 import { registerCommand, registerTool } from "../registry.js";
 import { listProposals, listProposalsSchema } from "./list-proposals.js";
 import { getProposal, getProposalSchema } from "./get-proposal.js";
