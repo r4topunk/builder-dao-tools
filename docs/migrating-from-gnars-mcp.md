@@ -277,7 +277,9 @@ builder-dao vote 42 FOR --reason "Strong proposal"
   backfills everything; `--full` is only for forcing a re-read of proposals you
   already have.
 - If a sync reports `"success": false` and exits non-zero, the errors are in the
-  `errors` array and the watermark was left untouched — just re-run it.
+  `errors` array and the watermark was never advanced past the failure (a failed
+  proposal fetch leaves it untouched; a failed vote fetch stops it just short of
+  that proposal) — just re-run it and the missing rows are backfilled.
 
 **Wrong proposals showing up**
 - Verify `DAO_ADDRESS` and `GOLDSKY_PROJECT_ID` are correct for the DAO you want.

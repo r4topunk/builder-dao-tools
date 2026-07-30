@@ -14,7 +14,11 @@ export interface SyncProposalsOutput {
   synced: number;
   updated: number;
   errors: string[];
-  /** Watermark stored after this run (unchanged when the proposal fetch failed) */
+  /**
+   * Watermark stored after this run. It never moves past the oldest proposal
+   * that failed to sync completely (proposals OR votes), so a re-run always
+   * retries exactly what failed.
+   */
   lastSyncTime: string;
 }
 
@@ -28,11 +32,21 @@ export async function syncProposals(
   const errors: string[] = [];
   let synced = 0;
   let updated = 0;
-  // Only a *proposal* fetch failure may freeze the watermark: the failed window
-  // must be retried on the next run. Vote failures are reported but do not
-  // freeze it, otherwise one flaky proposal would re-sync everything forever.
+  // A *proposal* fetch failure freezes the watermark entirely: we do not know
+  // what we missed. A *vote* failure only caps it just below the oldest
+  // proposal whose votes are missing, so the next run re-fetches that proposal
+  // (and its votes) instead of silently leaving a permanent vote gap.
   let proposalFetchFailed = false;
   let maxTimeCreated = 0;
+  let oldestIncompleteTimeCreated: number | null = null;
+
+  function markIncomplete(proposal: SubgraphProposal): void {
+    const created = parseInt(proposal.timeCreated, 10);
+    if (!Number.isFinite(created)) return;
+    if (oldestIncompleteTimeCreated === null || created < oldestIncompleteTimeCreated) {
+      oldestIncompleteTimeCreated = created;
+    }
+  }
 
   function trackWatermark(proposals: SubgraphProposal[]): void {
     for (const proposal of proposals) {
@@ -52,6 +66,7 @@ export async function syncProposals(
         }
       } catch (err) {
         errors.push(`Failed to fetch votes for proposal ${proposal.proposalNumber}: ${err}`);
+        markIncomplete(proposal);
       }
     }
   }
@@ -120,12 +135,20 @@ export async function syncProposals(
   // Watermark = newest proposal actually stored (not `now`), so clock skew
   // between this machine and the indexer cannot open a hole.
   let watermark = lastSync ?? 0;
-  if (!proposalFetchFailed && maxTimeCreated > watermark) {
-    watermark = maxTimeCreated;
-    repo.setLastSyncTime(watermark);
-  } else if (!proposalFetchFailed && lastSync === null) {
-    // First run with nothing to store: record the watermark so the next run is incremental
-    repo.setLastSyncTime(watermark);
+  if (!proposalFetchFailed) {
+    let candidate = maxTimeCreated;
+    if (oldestIncompleteTimeCreated !== null) {
+      // Incremental queries filter on `timeCreated_gt watermark`, so stopping one
+      // second short of the incomplete proposal makes the next run pick it up.
+      candidate = Math.min(candidate, oldestIncompleteTimeCreated - 1);
+    }
+    if (candidate > watermark) {
+      watermark = candidate;
+      repo.setLastSyncTime(watermark);
+    } else if (lastSync === null) {
+      // First run with nothing new to store: record the watermark so the next run is incremental
+      repo.setLastSyncTime(watermark);
+    }
   }
 
   return {

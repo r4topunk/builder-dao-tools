@@ -54,13 +54,15 @@ builder-dao sync [--full]
   not need `--full` to seed a fresh database.
 - **It paginates.** Both the backfill and the incremental window page through the
   subgraph in batches of 50 until a short page, so there is no 100-proposal cap.
-- **The watermark only advances on success.** It is set to the `timeCreated` of
-  the newest proposal actually stored — not wall-clock `now`, so clock skew
-  between your machine and the indexer cannot open a hole. If a proposal fetch
-  fails, the watermark is left untouched so the next run retries that window.
+- **The watermark never passes a failure.** It is set to the `timeCreated` of the
+  newest *fully synced* proposal — not wall-clock `now`, so clock skew between
+  your machine and the indexer cannot open a hole. If a proposal fetch fails the
+  watermark is left untouched; if only a proposal's votes fail, it stops just
+  short of that proposal. Either way the next run retries the failed window
+  instead of leaving a permanent gap.
 - **Failures are loud.** The command prints `success: false` with the collected
   `errors` and exits non-zero. A failed sync is never reported as a successful
-  one.
+  one, and re-running it is always sufficient to recover.
 
 Use `--full` when you want to re-read everything regardless of the watermark —
 e.g. after a schema change or if you suspect the local copy drifted.

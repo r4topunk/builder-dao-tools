@@ -132,20 +132,51 @@ describe("syncProposals", () => {
     expect(repo.getLastSyncTime()).toBe(TIME_BASE);
   });
 
-  it("reports vote failures without freezing the watermark", async () => {
-    const source = makeProposals(2);
+  it("keeps the watermark behind the oldest proposal whose votes failed", async () => {
+    const source = makeProposals(3);
     const ctx = makeCtx({
       fetchProposals: async (first = 50, skip = 0) => source.slice(skip, skip + first),
-      fetchVotes: async () => {
-        throw new Error("votes unavailable");
+      fetchVotes: async (proposalNumber: number) => {
+        if (proposalNumber === 2) throw new Error("votes unavailable");
+        return [];
       },
     });
 
     const result = await syncProposals(repo, { full: true }, ctx);
 
     expect(result.success).toBe(false);
-    expect(result.errors).toHaveLength(2);
-    expect(repo.getLastSyncTime()).toBe(TIME_BASE + 2 * 3600);
+    expect(result.errors).toHaveLength(1);
+    // Proposal 2 has no votes stored → the watermark must stay below it so the
+    // next incremental run re-fetches proposals 2 and 3 and closes the gap.
+    expect(repo.getLastSyncTime()).toBe(TIME_BASE + 2 * 3600 - 1);
+    expect(result.lastSyncTime).toBe(new Date((TIME_BASE + 2 * 3600 - 1) * 1000).toISOString());
+  });
+
+  it("re-fetches the vote gap on the next run once the subgraph recovers", async () => {
+    const source = makeProposals(3);
+    let votesBroken = true;
+    const fetchVotes = vi.fn(async (proposalNumber: number) => {
+      if (votesBroken && proposalNumber === 2) throw new Error("votes unavailable");
+      return [];
+    });
+    const ctx = makeCtx({
+      fetchProposals: async (first = 50, skip = 0) => source.slice(skip, skip + first),
+      fetchRecentProposals: async (since: number, first = 50, skip = 0) =>
+        source.filter((p) => parseInt(p.timeCreated, 10) > since).slice(skip, skip + first),
+      fetchVotes,
+    });
+
+    const first = await syncProposals(repo, { full: false }, ctx);
+    expect(first.success).toBe(false);
+
+    votesBroken = false;
+    fetchVotes.mockClear();
+    const second = await syncProposals(repo, { full: false }, ctx);
+
+    expect(second.success).toBe(true);
+    // The gap window (proposals 2 and 3) is retried, not skipped
+    expect(fetchVotes.mock.calls.map((c) => c[0])).toEqual([2, 3]);
+    expect(repo.getLastSyncTime()).toBe(TIME_BASE + 3 * 3600);
   });
 
   it("re-syncs everything with full=true and keeps a monotonic watermark", async () => {

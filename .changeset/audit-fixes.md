@@ -31,8 +31,9 @@ Audit fixes across both packages.
   stopping at 100 proposals.
 - A failed fetch no longer advances the sync watermark (which permanently skipped
   the failed window) and no longer exits 0 with success-shaped output. The
-  watermark tracks the newest proposal actually stored rather than wall-clock
-  time.
+  watermark tracks the newest *fully synced* proposal rather than wall-clock time:
+  a failed proposal fetch freezes it, and a failed vote fetch caps it just below
+  that proposal, so re-running the command always closes the gap.
 
 Packaging and docs: both manifests gained `engines`, `repository`, `homepage`,
 `bugs` and `author`; a `LICENSE` now ships in each tarball; broken source maps
