@@ -91,7 +91,14 @@ All flags, arguments, and outputs are identical.
 
 ## MCP Client Configuration Diff
 
-**Old Claude Desktop config** (`~/.claude/claude_desktop_config.json`):
+Claude Desktop reads its config from:
+
+| OS | Path |
+|---|---|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+
+**Old Claude Desktop config:**
 
 ```json
 {
@@ -185,9 +192,12 @@ On macOS:
 
 2. **Start fresh (re-sync):**
    ```bash
-   builder-dao sync --full --pretty    # Downloads all Gnars proposals
+   builder-dao sync --pretty            # Backfills all Gnars proposals
    builder-dao index --pretty           # Generates embeddings
    ```
+   A first `sync` against an empty database backfills everything and paginates
+   until the subgraph is exhausted — `--full` is only needed to re-read
+   proposals you already have.
 
 Both approaches work. Option 2 is simpler if you don't need the old DB; option 1 preserves history and saves bandwidth.
 
@@ -263,7 +273,11 @@ builder-dao vote 42 FOR --reason "Strong proposal"
 - Install the addon: `npm install -g @builder-dao/cli-search`
 
 **"Database file not found; sync first"**
-- Run `builder-dao sync --full --pretty` to download proposals.
+- Run `builder-dao sync --pretty` to download proposals. On a fresh database this
+  backfills everything; `--full` is only for forcing a re-read of proposals you
+  already have.
+- If a sync reports `"success": false` and exits non-zero, the errors are in the
+  `errors` array and the watermark was left untouched — just re-run it.
 
 **Wrong proposals showing up**
 - Verify `DAO_ADDRESS` and `GOLDSKY_PROJECT_ID` are correct for the DAO you want.
@@ -271,7 +285,7 @@ builder-dao vote 42 FOR --reason "Strong proposal"
 
 **MCP tools not appearing in Claude Desktop**
 - Reload Claude Desktop or restart Cursor.
-- Check `~/.claude/claude_desktop_config.json` has the correct command (`builder-dao`) and env vars set.
+- Check your `claude_desktop_config.json` has the correct command (`builder-dao`) and env vars set. It lives at `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
 
 ## Next Steps
 

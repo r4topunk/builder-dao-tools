@@ -29,13 +29,15 @@ Or locally in a project:
 pnpm add @builder-dao/cli @builder-dao/cli-search
 ```
 
-The core CLI auto-detects and loads this addon — no extra configuration needed.
+The core CLI loads this addon automatically when it is installed and resolvable —
+no extra configuration needed. (Core imports `@builder-dao/cli-search` by name at
+startup; see the note on addon discovery in the [plugin guide](../../docs/plugin-api.md#discovery).)
 
 ## Commands
 
 ### `sync`
 
-Pull all proposals from the Goldsky subgraph into a local per-DAO SQLite database.
+Pull proposals from the Goldsky subgraph into a local per-DAO SQLite database.
 
 ```bash
 builder-dao sync [--full]
@@ -43,21 +45,40 @@ builder-dao sync [--full]
 
 | Flag | Type | Description |
 |---|---|---|
-| `--full` | boolean | Re-sync all proposals (default: incremental sync only new/updated) |
+| `--full` | boolean | Force a complete re-sync of every proposal |
+
+**How the default (incremental) mode behaves:**
+
+- **First run backfills.** With no stored watermark there is nothing to be
+  incremental against, so `sync` runs the full backfill automatically. You do
+  not need `--full` to seed a fresh database.
+- **It paginates.** Both the backfill and the incremental window page through the
+  subgraph in batches of 50 until a short page, so there is no 100-proposal cap.
+- **The watermark only advances on success.** It is set to the `timeCreated` of
+  the newest proposal actually stored — not wall-clock `now`, so clock skew
+  between your machine and the indexer cannot open a hole. If a proposal fetch
+  fails, the watermark is left untouched so the next run retries that window.
+- **Failures are loud.** The command prints `success: false` with the collected
+  `errors` and exits non-zero. A failed sync is never reported as a successful
+  one.
+
+Use `--full` when you want to re-read everything regardless of the watermark —
+e.g. after a schema change or if you suspect the local copy drifted.
 
 **Example:**
 ```bash
-# First sync (downloads all proposals)
+# First sync — backfills everything, no flag needed
 builder-dao sync --pretty
 
-# Later, incremental sync (only new proposals)
+# Later runs — only the window since the last successful sync
 builder-dao sync --pretty
 
-# Force full re-index
+# Force a complete re-sync
 builder-dao sync --full --pretty
 ```
 
-**Output:** JSON object with `synced`, `inserted`, `updated`, `deleted`, `durationMs`.
+**Output:** JSON object with `success` (boolean), `synced`, `updated`, `errors`
+(array), and `lastSyncTime` (ISO timestamp of the stored watermark).
 
 ---
 
@@ -113,17 +134,25 @@ builder-dao search "treasury management" --status EXECUTED --threshold 0.5 --pre
 
 ### Location
 
-The addon stores proposals in a SQLite database per DAO:
+The addon stores proposals in a SQLite database per DAO. The path is resolved in
+this order (see `src/db/connection.ts`):
 
-```
-$XDG_DATA_HOME/builder-dao/{dao-addr-short}.db
-```
+1. `$DB_PATH`, used verbatim, if set.
+2. `$XDG_DATA_HOME/builder-dao/{dao-addr-short}.db` when `XDG_DATA_HOME` is set.
+3. Otherwise `~/.local/share/builder-dao/{dao-addr-short}.db`.
 
-On macOS: `~/.local/share/builder-dao/{dao-addr-short}.db`
-On Linux: `~/.local/share/builder-dao/{dao-addr-short}.db`
-On Windows: `%LOCALAPPDATA%/builder-dao/{dao-addr-short}.db`
+(`openDatabase()` also accepts a programmatic path override, but no CLI flag is
+wired to it — use `DB_PATH` from the command line.)
 
-Example for Gnars (`0x880fb3cf...`):
+`{dao-addr-short}` is the first 10 characters of the DAO address (`0x` + 8 hex
+chars). The parent directory is created on first use.
+
+The same XDG-style layout is used on every platform — there is **no**
+platform-specific branch, so on Windows the default resolves under the user
+profile (`%USERPROFILE%\.local\share\builder-dao\`), not `%LOCALAPPDATA%`. Set
+`XDG_DATA_HOME` or `DB_PATH` if you want it elsewhere.
+
+Example for Gnars (`0x880fb3cf...`) with `XDG_DATA_HOME` unset:
 ```
 ~/.local/share/builder-dao/0x880fb3cf.db
 ```
@@ -167,14 +196,14 @@ Rough estimates for a single DAO's database:
 
 1. **First time with a new DAO:**
    ```bash
-   builder-dao sync --pretty          # Download all proposals
+   builder-dao sync --pretty          # Backfills all proposals (no --full needed)
    builder-dao index --pretty          # Generate embeddings (~1 min for 100 proposals)
    builder-dao search "key topic" --pretty  # Search
    ```
 
 2. **Later — keep data fresh:**
    ```bash
-   builder-dao sync --pretty          # Incremental — only new proposals
+   builder-dao sync --pretty          # Incremental — only the window since last success
    builder-dao index --pretty          # Only indexes missing embeddings
    builder-dao search "..." --pretty   # Search updated data
    ```

@@ -44,10 +44,16 @@ builder-dao proposals --dao 0x880fb3cf... --subgraph-project project_cm33...
 
 All commands accept:
 
+- `--dao <addr>` — DAO token address (overrides `DAO_ADDRESS`)
+- `--subgraph-project <id>` — Goldsky project ID (overrides `GOLDSKY_PROJECT_ID`)
+- `--rpc-url <url>` — RPC URL (overrides `BASE_RPC_URL`)
 - `--pretty` — Pretty-print JSON (2-space indent)
 - `--toon` — Output TOON format (~40% fewer tokens for LLM use)
-- `--help` — Show help
+- `--sse` — With `mcp` only: serve over HTTP/SSE (port via `MCP_PORT`)
+- `--help`, `-h` — Show help
 - `--version` — Print version
+
+Run `builder-dao --help` for the authoritative list.
 
 ## Commands
 
@@ -64,14 +70,23 @@ builder-dao proposals [--status STATUS] [--limit N] [--offset N] [--order asc|de
 | `--status` | string | — | Filter by proposal status (e.g., `ACTIVE`, `EXECUTED`, `DEFEATED`, `PENDING`, `SUCCEEDED`, `CANCELLED`) |
 | `--limit` | number | 20 | Number of proposals to return |
 | `--offset` | number | 0 | Pagination offset |
-| `--order` | `asc`\|`desc` | `desc` | Sort order by proposal ID |
+| `--order` | `asc`\|`desc` | `desc` | Sort order by creation time (`proposalNumber` breaks ties) |
+
+Ordering and pagination are applied over the whole matching set, so paging with
+`--offset` walks a globally monotonic sequence in both directions.
 
 **Example:**
 ```bash
 builder-dao proposals --status ACTIVE --limit 10 --pretty
 ```
 
-**Output:** JSON array of proposal objects with `id`, `number`, `title`, `description`, `proposer`, `status`, `forVotes`, `againstVotes`, `abstainVotes`, `createdBlock`, `startBlock`, `endBlock`.
+**Output:** An object with:
+
+- `proposals` — array of `{ proposalNumber, title, status, proposer, forVotes, againstVotes, abstainVotes, quorumVotes, voteStart, voteEnd, timeCreated }`
+- `total` — size of the whole matching set (after `--status`), **not** the page size
+- `hasMore` — `true` when `offset + returned < total`
+
+Use `builder-dao proposal <id>` for the fields omitted here (description, calldata, etc.).
 
 ---
 
@@ -114,7 +129,12 @@ builder-dao votes <id> [--support FOR|AGAINST|ABSTAIN] [--limit N] [--offset N]
 builder-dao votes 42 --support FOR --limit 20 --pretty
 ```
 
-**Output:** JSON array of vote objects with `id`, `proposalId`, `voter`, `support`, `weight`, `reason`.
+**Output:** An object with:
+
+- `votes` — array of `{ voter, support, weight, reason, timestamp, transactionHash }`
+- `summary` — `{ totalVoters, forVoters, againstVoters, abstainVoters }` over **every** vote on the proposal, unaffected by `--support`, `--limit` and `--offset`
+- `total` — votes matching `--support` across all pages
+- `hasMore` — `true` when `offset + returned < total`
 
 ---
 
@@ -162,6 +182,11 @@ builder-dao ens 0x1234... 0x5678... --pretty
 
 **Output:** Object with `displayName`, `name`, `avatar`, `address` per input.
 
+`name` is the actual ENS record and is `null` when the address has none.
+`displayName` always has a value — it falls back to a shortened address — so use
+`name`, not `displayName`, to test whether an address resolved. For batch input,
+`resolved` counts only entries with a non-null `name`.
+
 ---
 
 ### `mcp`
@@ -194,7 +219,7 @@ Returns: `{ "status": "ok", "mode": "streamable-http", "port": 3100 }`
 
 ## MCP Tools
 
-When running `builder-dao mcp`, the following tools are exposed to MCP clients:
+When running `builder-dao mcp`, these six core tools are exposed to MCP clients:
 
 - **`list_proposals`** — List proposals with status, limit, offset, and order
 - **`get_proposal`** — Get a single proposal by ID or number
@@ -203,11 +228,15 @@ When running `builder-dao mcp`, the following tools are exposed to MCP clients:
 - **`resolve_ens_batch`** — Resolve multiple addresses to ENS
 - **`cast_vote`** — Cast a vote on-chain (requires PRIVATE_KEY)
 
+Installing `@builder-dao/cli-search` adds three more (`sync_proposals`,
+`index_embeddings`, `search_proposals`) for a total of nine.
+
 Tools support `format="toon"` to reduce token usage by ~40% for LLM contexts.
 
 ### MCP Client Setup
 
-**Claude Desktop** (`~/.claude/claude_desktop_config.json`):
+**Claude Desktop** — macOS `~/Library/Application Support/Claude/claude_desktop_config.json`,
+Windows `%APPDATA%\Claude\claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
