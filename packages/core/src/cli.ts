@@ -21,9 +21,17 @@ function stripFlags(args: string[]): string[] {
   return out;
 }
 
+function formatCommandLine(usage: string, description: string): string {
+  return `  ${usage.padEnd(60)} ${description}`;
+}
+
 function printHelp(): void {
   const cmds = getCommands();
-  const cmdLines = cmds.map((c) => `  ${c.usage.padEnd(60)} ${c.description}`).join("\n");
+  const cmdLines = [
+    ...cmds.map((c) => formatCommandLine(c.usage, c.description)),
+    // `mcp` is dispatched directly in main(), not via the command registry
+    formatCommandLine("mcp [--sse]", "Launch the MCP server (stdio; HTTP/SSE with --sse)"),
+  ].join("\n");
   console.error(`
 builder-dao - CLI for Nouns Builder DAOs on Base
 
@@ -35,6 +43,7 @@ Global flags:
   --rpc-url <url>            RPC URL (overrides BASE_RPC_URL env)
   --pretty                   Pretty-print JSON output
   --toon                     Output TOON (~40% fewer tokens)
+  --sse                      With \`mcp\`: serve over HTTP/SSE (port via MCP_PORT)
   --help, -h                 Show this help
   --version                  Print version
 

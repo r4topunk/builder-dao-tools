@@ -4,25 +4,20 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer as createHttpServer } from "node:http";
 import { resolveConfig } from "./config.js";
 import { createContext } from "./context.js";
-import { registerCoreCommands } from "./tools/register-core.js";
 import { getTools } from "./registry.js";
 import { createMcpResponse, type OutputFormat } from "./utils/encoder.js";
 
+// Commands/tools are registered by the caller (cli.ts) before dispatch — registering
+// again here would throw `Command '…' is already registered`.
 export async function createServer() {
-  registerCoreCommands();
-  try {
-    // @ts-expect-error optional addon
-    await import("@builder-dao/cli-search");
-  } catch {
-    // Addon not installed
-  }
-
   const config = resolveConfig(process.argv.slice(2), process.env);
   const ctx = createContext(config);
 
+  const pkg = await import("../package.json", { with: { type: "json" } });
+
   const server = new McpServer({
     name: "builder-dao",
-    version: "0.1.0",
+    version: pkg.default.version,
   });
 
   for (const tool of getTools()) {
